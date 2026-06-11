@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useScroll, useMotionValueEvent } from "framer-motion";
+import { useScroll } from "framer-motion";
 
 interface CoffeeCanvasProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -182,10 +182,10 @@ export default function CoffeeCanvas({
     };
     mediaQuery.addEventListener("change", handleMediaQueryChange);
 
-    // Damped render loop for continuous frame interpolation limited to 24 FPS
+    // Damped render loop for continuous frame interpolation limited to 28 FPS
     let rafId: number | null = null;
     let lastTime = 0; // Initialize to 0 to sync dynamically on the first loop frame
-    const fps = 24;
+    const fps = 28;
     const fpsInterval = 1000 / fps;
     let isIntersecting = true;
 
@@ -250,51 +250,41 @@ export default function CoffeeCanvas({
       }
     };
 
-    // IntersectionObserver to pause loop when container is scrolled out of view
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        isIntersecting = entry.isIntersecting;
-        if (isIntersecting) {
-          startLoop();
-        } else {
-          stopLoop();
-        }
-      },
-      { threshold: 0 }
-    );
+    // Scroll progress handler to toggle animation loop when container is in view
+    const handleScrollChange = (latest: number) => {
+      const isOut = latest < -0.05 || latest > 1.05;
+      if (isOut) {
+        isIntersecting = false;
+        stopLoop();
+        return;
+      }
 
-    if (scrollContainerRef.current) {
-      observer.observe(scrollContainerRef.current);
-    }
+      isIntersecting = true;
+      startLoop();
 
-    startLoop();
+      // Clamp scroll progress and calculate target frame index
+      const clamped = Math.max(0, Math.min(1.0, latest));
+      targetFrameRef.current = clamped * (totalFrames - 1);
+    };
+
+    const unsubscribeScroll = scrollYProgress.on("change", handleScrollChange);
+
+    // Run initial scroll update check to align frames immediately on mount
+    handleScrollChange(scrollYProgress.get());
 
     return () => {
       isMounted = false;
       window.removeEventListener("resize", handleResize);
       mediaQuery.removeEventListener("change", handleMediaQueryChange);
-      observer.disconnect();
+      unsubscribeScroll();
       stopLoop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Listen to Framer Motion scroll updates and set target frame index
-  useMotionValueEvent(scrollYProgress, "change", (latest) => {
-    // Optimization: Skip tracking if the scroll container is out of view
-    if (latest < -0.05 || latest > 1.05) {
-      return;
-    }
-
-    // Clamp scroll progress and calculate target frame index (float value for sub-frame easing)
-    const clamped = Math.max(0, Math.min(1.0, latest));
-    targetFrameRef.current = clamped * (totalFrames - 1);
-  });
-
   return (
     <div className="canvas-container">
       <canvas ref={canvasRef} className="canvas-element" />
-      <div className="canvas-tint" />
     </div>
   );
 }
