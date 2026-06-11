@@ -118,44 +118,36 @@ export default function CoffeeCanvas({
       img.onerror = () => handleCriticalImageError(img.src);
     }
 
-    // Lazy load the remaining frames in the background sequentially to avoid blocking the network and CPU main thread
+    // Lazy load the remaining frames in the background, staggered by 20ms to prevent CPU/network spikes
     const loadRemainingFrames = () => {
-      let currentIndex = criticalFramesCount + 1;
-
-      const loadNext = () => {
-        if (!isMounted || currentIndex > totalFrames) return;
-
-        const img = images[currentIndex - 1];
-        const paddedIndex = String(currentIndex).padStart(3, "0");
-
-        img.onload = () => {
+      for (let i = criticalFramesCount + 1; i <= totalFrames; i++) {
+        const delay = (i - criticalFramesCount) * 20; // Stagger start times by 20ms each (fully loaded in ~3.8s)
+        
+        setTimeout(() => {
           if (!isMounted) return;
-          
-          // If the user is currently viewing this frame, redraw to show it
-          const currentDrawIndex = Math.min(
-            Math.max(0, Math.round(currentFrameRef.current)),
-            totalFrames - 1
-          );
-          if (currentDrawIndex === currentIndex - 1) {
-            drawFrame(currentDrawIndex);
-          }
 
-          currentIndex++;
-          // Stagger the next frame load by 15ms to give the rendering thread breathing room
-          setTimeout(loadNext, 15);
-        };
+          const img = images[i - 1];
+          const paddedIndex = String(i).padStart(3, "0");
 
-        img.onerror = () => {
-          console.warn(`Failed to load background frame: ${img.src}`);
-          currentIndex++;
-          setTimeout(loadNext, 15);
-        };
+          img.onload = () => {
+            if (!isMounted) return;
+            // If the user is currently viewing this frame, redraw to show it
+            const currentDrawIndex = Math.min(
+              Math.max(0, Math.round(currentFrameRef.current)),
+              totalFrames - 1
+            );
+            if (currentDrawIndex === i - 1) {
+              drawFrame(currentDrawIndex);
+            }
+          };
 
-        img.src = `/frames/ezgif-frame-${paddedIndex}.webp`;
-      };
+          img.onerror = () => {
+            console.warn(`Failed to load background frame: /frames/ezgif-frame-${paddedIndex}.webp`);
+          };
 
-      // Start sequential preloading
-      loadNext();
+          img.src = `/frames/ezgif-frame-${paddedIndex}.webp`;
+        }, delay);
+      }
     };
 
     // Resize handler to adjust canvas bounds with DPR support
