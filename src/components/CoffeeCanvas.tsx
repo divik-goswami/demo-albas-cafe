@@ -76,42 +76,70 @@ export default function CoffeeCanvas({
   // Preloading sequence
   useEffect(() => {
     let isMounted = true;
-    let loadedCount = 0;
+    let loadedCriticalCount = 0;
+    const criticalFramesCount = 15; // Only block loading on the first 15 frames for instant start
     const images: HTMLImageElement[] = [];
 
-    // Helper to trigger load completion if all files are loaded
-    const handleImageLoad = () => {
+    // Pre-create all Image objects
+    for (let i = 1; i <= totalFrames; i++) {
+      images.push(new Image());
+    }
+    imagesRef.current = images;
+
+    const handleCriticalImageLoad = () => {
       if (!isMounted) return;
-      loadedCount++;
-      const progressPercent = (loadedCount / totalFrames) * 100;
+      loadedCriticalCount++;
+      const progressPercent = Math.min(100, (loadedCriticalCount / criticalFramesCount) * 100);
       onProgress(progressPercent);
 
-      if (loadedCount === totalFrames) {
+      if (loadedCriticalCount === criticalFramesCount) {
         onComplete();
         // Render initial frame once preloading completes
         setTimeout(() => {
           drawFrame(0);
         }, 100);
+
+        // Load all remaining frames in the background
+        loadRemainingFrames();
       }
     };
 
-    const handleImageError = (errImg: string) => {
-      console.warn(`Failed to load frame: ${errImg}`);
-      // Treat as loaded to not block the loader progress
-      handleImageLoad();
+    const handleCriticalImageError = (errImg: string) => {
+      console.warn(`Failed to load critical frame: ${errImg}`);
+      handleCriticalImageLoad(); // Count as loaded to prevent stuck preloader
     };
 
-    // Preload loop (using WebP instead of PNG for 30x faster download speed)
-    for (let i = 1; i <= totalFrames; i++) {
-      const img = new Image();
+    // Load critical frames first
+    for (let i = 1; i <= criticalFramesCount; i++) {
+      const img = images[i - 1];
       const paddedIndex = String(i).padStart(3, "0");
       img.src = `/frames/ezgif-frame-${paddedIndex}.webp`;
-      img.onload = handleImageLoad;
-      img.onerror = () => handleImageError(img.src);
-      images.push(img);
+      img.onload = handleCriticalImageLoad;
+      img.onerror = () => handleCriticalImageError(img.src);
     }
 
-    imagesRef.current = images;
+    // Lazy load the remaining frames in the background
+    const loadRemainingFrames = () => {
+      for (let i = criticalFramesCount + 1; i <= totalFrames; i++) {
+        const img = images[i - 1];
+        const paddedIndex = String(i).padStart(3, "0");
+        img.src = `/frames/ezgif-frame-${paddedIndex}.webp`;
+        img.onload = () => {
+          if (!isMounted) return;
+          // If the user is currently viewing this frame, redraw to show it
+          const currentDrawIndex = Math.min(
+            Math.max(0, Math.round(currentFrameRef.current)),
+            totalFrames - 1
+          );
+          if (currentDrawIndex === i - 1) {
+            drawFrame(currentDrawIndex);
+          }
+        };
+        img.onerror = () => {
+          console.warn(`Failed to load background frame: ${img.src}`);
+        };
+      }
+    };
 
     // Resize handler to adjust canvas bounds with DPR support
     const handleResize = () => {
