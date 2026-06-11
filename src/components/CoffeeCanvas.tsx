@@ -68,7 +68,7 @@ export default function CoffeeCanvas({
     if (!ctx) return;
 
     const img = imagesRef.current[index];
-    if (img && img.complete) {
+    if (img && img.src && img.complete && img.naturalWidth > 0) {
       drawImageCover(ctx, img);
     }
   };
